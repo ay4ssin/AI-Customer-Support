@@ -10,9 +10,14 @@ export default function Home() {
 
   const [history, setHistory] = useState([
     {
-      role: 'user',
+      role: "user",
+      parts: [{ text: "👋" }]
+    },
+    {
+      role: "model",
       parts: [{ text: "Hi! I'm the Headstarter support assistant. How can I help you today?" }]
     }
+
   ]);
 
   const [message, setMessage] = useState('');
@@ -79,12 +84,12 @@ export default function Home() {
               key={index}
               display="flex"
               justifyContent={
-                message.role === 'user' ? 'flex-start' : 'flex-end'
+                message.role === 'user' ? 'flex-end' : 'flex-start'
               }
             >
               <Box
                 bgcolor={
-                  message.role === 'user'
+                  message.role === 'model'
                     ? 'primary.main'
                     : 'secondary.main'
                 }
