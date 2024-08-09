@@ -1,15 +1,24 @@
 'use client'
 
 import Image from "next/image";
-import styles from "./page.module.css";
-import { Box, Button, Divider, Stack, TextField, Typography } from '@mui/material';
+import { Box, Button, Divider, Stack, TextField, Typography, Modal, Accordion, AccordionDetails,AccordionSummary } from '@mui/material';
+import MuiAccordionSummary, { AccordionSummaryProps } from '@mui/material/AccordionSummary';
 import { useState, useRef, useEffect } from 'react';
-import { useRouter } from 'next/navigation'
-import theme from "./theme";
-import { transform } from "next/dist/build/swc";
-//import { firestore } from "./src/firebase";
+import { firestore, auth } from "./src/firebase";
+import {  createUserWithEmailAndPassword  , onAuthStateChanged, signInWithEmailAndPassword, signOut   } from 'firebase/auth';
+import Theme from "./theme";
 
+import {
+  collection,
+  doc,
+  getDocs,
+  query,
+  setDoc,
+  deleteDoc,
+  getDoc,
+} from 'firebase/firestore';
 
+// style for sign in / sign up modal
 
 // style for sign up and sign in modal
 const style = {
@@ -28,24 +37,70 @@ const style = {
 };
 
 
-
 export default function Home() {
 
-  // SIGN IN / SIGN UP
+  // USER AUTH
 
-  const [open, setOpen] = useState(false)
+  const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const router = useRouter()
 
+  const [expanded, setExpanded] = useState(false);
 
-  const handleOpen = () => setOpen(true)
-  const handleClose = () => setOpen(false)
+  const handleChange = (panel) => (event, newExpanded) => {
+    setExpanded(newExpanded ? panel : false);
+  };
 
+  const onSubmit = async (e) => {
+    e.preventDefault()
+    await createUserWithEmailAndPassword(auth, email, password).then((userCredential) => {
+      // Sign up
+      const user = userCredential.user;
+      console.log(user);
+    })
+    .catch((error) => {
+      const errorCode = error.code;
+      const errorMessage = error.message;
+      console.log(errorCode, errorMessage)
+    })
+  }
+
+  const onLogin = (e) => {
+    e.preventDefault();
+    signInWithEmailAndPassword(auth, email, password).then((userCredential) => {
+      // Signed in
+      const user = userCredential.user;
+      console.log(user);
+    })
+    .catch((error) => {
+      const errorCode = error.code;
+      const errorMessage = error.message;
+      console.log(errorCode, errorMessage)
+    })
+  }
+
+  const handleLogout = () => {               
+    signOut(auth).then(() => {
+    // Sign-out successful
+        console.log("Signed out successfully")
+    }).catch((error) => {
+    // An error happened.
+    });
+}
+
+  useEffect(()=> {
+    onAuthStateChanged(auth, (user) => {
+      if(user){
+        const uid = user.uid;
+        console.log("uid", uid)
+      } else{
+        console.log("user is logged out")
+      }
+    })
+  })
 
 
   // MESSAGING
-
   const [history, setHistory] = useState([
     {
       role: "user",
@@ -96,25 +151,139 @@ export default function Home() {
     scrollToBottom();
   }, [history]);
 
-  // DISPLAY
-
   return (
     <Box
       width="100vw"
       height="100vh"
       display="flex"
-      flexDirection="column"
+      flexDirection="row"
       justifyContent="center"
       alignItems="center"
+      sx={{bgcolor:'background.default'}}
     >
+
+      <Box fullWidth sx={{ display:'flex',
+        flexDirection:'column',
+        bgcolor:'primary.highlight', 
+        mr: 5,
+        width:300,
+        height:'auto',
+        borderRadius: 5,
+        border:"1px solid white", 
+        p:3,
+        borderColor:'primary.border'}}>
+
+        {/* <Button variant="contained" onClick={handleSignInOpen} fullWidth sx={{height:'40px', mb:3, color:'white'}}>
+          Sign In
+        </Button>
+        <Box
+          visibility={signInOpen}
+          aria-labelledby="modal-modal-title"
+          aria-describedby="modal-modal-description">
+          <Box>
+            Email
+          </Box>
+
+        </Box> */}
+        
+          <Accordion 
+            variant="contained" 
+            fullWidth 
+            expanded={expanded === 'panel1'} 
+            onChange={handleChange('panel1')}
+            sx={{mb:2, bgcolor:'primary.main', boxShadow:1, borderRadius:2, '&:before': {display: 'none'}}}>
+
+            <AccordionSummary id="panel-header" aria-controls="panel-content"
+              sx={{justifyContent:"center", color:'primary.highlight'}}>
+              Sign In
+            </AccordionSummary>
+            <AccordionDetails sx={{}}>
+              <Box sx={{}}>
+                <TextField
+                  sx={{mb:2, background: '#fff2f4', borderRadius:1}}
+                  label="Email"
+                  fullWidth
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+                <TextField
+                  sx={{mb:2, background: '#fff2f4', borderRadius:1}}
+                  label="Password"
+                  fullWidth
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+                <Button 
+                  variant="contained" 
+                  fullWidth 
+                  sx={{height:'40px', mb:3, bgcolor:'primary.highlight'}}
+                  onClick={onLogin}>
+                  Sign In
+                </Button>
+              </Box>
+            </AccordionDetails>
+          </Accordion>
+        
+
+        
+          <Accordion variant="contained" fullWidth expanded={expanded === 'panel2'} onChange={handleChange('panel2')}
+            sx={{ mb:2, bgcolor:'primary.main', boxShadow:1, borderRadius:2, '&:before': {display: 'none'}}}>
+
+            <AccordionSummary id="panel-header" aria-controls="panel-content"
+              sx={{justifyContent:"center", color:'primary.highlight'}}>
+              Sign Up
+            </AccordionSummary>
+            <AccordionDetails>
+              <Box sx={{}}>
+                {/* <TextField
+                  sx={{mb:2}}
+                  label="Name"
+                  fullWidth
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                /> */}
+                <TextField
+                  sx={{mb:2,background: '#fff2f4', borderRadius:1}}
+                  label="Email"
+                  fullWidth
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+                <TextField
+                  sx={{mb:2, background: '#fff2f4', borderRadius:1}}
+                  label="Password"
+                  fullWidth
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+                <Button variant="contained" fullWidth sx={{height:'40px', mb:3, bgcolor:'primary.highlight'}} onClick={onSubmit}>
+                  Sign Up!
+                </Button>
+              </Box>
+            </AccordionDetails>
+          </Accordion>
+        
+          <Button variant="contained" fullWidth sx={{height:'40px', mb:3, color:'white', mt:2}} onClick={handleLogout} >
+            Log out
+          </Button>
+        
+
+
+        {/* <Button variant="contained" onClick={handleSignInOpen} fullWidth sx={{height:'40px', mb:3, color:'white', mt:10}}>
+          Sign Up
+        </Button> */}
+
+      </Box>
       
       <Stack
         direction={"column"}
         width="500px"
         height="700px"
-        border="1px solid black"
+        
+        borderRadius={5}
         p={2}
         spacing={3}
+        sx={{bgcolor: 'primary.highlight', border:"1px solid white", borderColor:'primary.border'}}
       >
         <Box
         fullwidth
@@ -161,7 +330,7 @@ export default function Home() {
                     ? 'primary.main'
                     : 'secondary.main'
                 }
-                color="white"
+                color= "white"
                 borderRadius={16}
                 p={3}
               >
@@ -187,7 +356,8 @@ export default function Home() {
           <Button
             variant='contained'
             onClick={sendMessage}
-            disabled={isLoading}>
+            disabled={isLoading}
+            sx={{bgcolor: 'secondary.main'}}>
             {isLoading ? 'Sending...' : 'Send'}
           </Button>
         </Stack>
