@@ -6,6 +6,8 @@ import { useState, useRef, useEffect } from 'react';
 import { firestore, auth } from "./src/firebase";
 import { createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import Theme from "./theme";
+import TypingIndicator from './components/TypingIndicator';
+
 
 import {
   collection,
@@ -178,7 +180,11 @@ export default function Home() {
     })
   }, [])
 
+  const [isBotTyping, setIsBotTyping] = useState(false);
+
   const sendMessage = async () => {
+    if (!message.trim()) return; // Prevent sending empty messages
+
     if (message.toLowerCase() === '/end') {
       conversationManager.endConversation();
       setIsLoading(true);
@@ -186,8 +192,35 @@ export default function Home() {
     }
     
     conversationManager.processMessage(message);
+
+    setIsLoading(true);
+    setIsBotTyping(true);
+
+    try {
+      //add user to history
+      setHistory((history) => [...history, { role: "user", parts: [{ text: message }] }]);
+      setMessage('');
+  
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json" 
+        },
+        body: JSON.stringify([...history, { role: "user", parts: [{ text: message }] }])
+      });
+  
+      const data = await response.json();
+  
+      //adding bot response to history
+      setHistory((history) => [...history, { role: "model", parts: [{ text: data.text }] }]);
+    } catch (error) {
+      console.error('Error fetching bot response:', error);
+    } finally {
+      setIsLoading(false);
+      setIsBotTyping(false);
+    }
     
-    setHistory((history) => [...history, { role: "user", parts: [{ text: message }] }]);
+    /*setHistory((history) => [...history, { role: "user", parts: [{ text: message }] }]);
     setMessage('');
 
     const response = await fetch("/api/chat", {
@@ -200,7 +233,7 @@ export default function Home() {
 
     const data = await response.json();
 
-    setHistory((history) => [...history, { role: "model", parts: [{ text: data.text }] }]);
+    setHistory((history) => [...history, { role: "model", parts: [{ text: data.text }] }]);*/
   }
 
   const handleKeyPress = (event) => {
@@ -405,6 +438,11 @@ export default function Home() {
               </Box>
             </Box>
           ))}
+          {isBotTyping && (
+            <>
+            <TypingIndicator />
+          </>
+          )}
           <div ref={messagesEndRef} />
         </Stack>
 

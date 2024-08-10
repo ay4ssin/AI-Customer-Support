@@ -47,8 +47,7 @@ const model = genAI.getGenerativeModel({
     
     If you're unsure about any information, it's okay to say you don't know and offer websites to visit and helplines to call that may be helpful to the user
     
-    Do not send messages
-longer than 500 characters, instead break them up into multiple messages, each with     `,
+    Do not send messages longer than 500 characters, instead break them up into multiple messages, each with     `,
 });
 
 async function startChat(history) {
