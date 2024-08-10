@@ -1,11 +1,10 @@
 'use client'
 
 import Image from "next/image";
-import { Box, Button, Divider, Stack, TextField, Typography, Modal, Accordion, AccordionDetails,AccordionSummary } from '@mui/material';
-import MuiAccordionSummary, { AccordionSummaryProps } from '@mui/material/AccordionSummary';
+import { Box, Button, Divider, Stack, TextField, Typography, Modal, Accordion, AccordionDetails, AccordionSummary, Rating } from '@mui/material';
 import { useState, useRef, useEffect } from 'react';
 import { firestore, auth } from "./src/firebase";
-import {  createUserWithEmailAndPassword  , onAuthStateChanged, signInWithEmailAndPassword, signOut   } from 'firebase/auth';
+import { createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import Theme from "./theme";
 
 import {
@@ -16,9 +15,9 @@ import {
   setDoc,
   deleteDoc,
   getDoc,
+  addDoc,
+  serverTimestamp
 } from 'firebase/firestore';
-
-// style for sign in / sign up modal
 
 // style for sign up and sign in modal
 const style = {
@@ -30,22 +29,105 @@ const style = {
   bgcolor: 'white',
   border: '2px solid #000',
   boxShadow: 24,
-  p:4,
+  p: 4,
   display: 'flex',
   flexDirection: 'column',
-  gap:3,
+  gap: 3,
 };
 
+class RatingSystem {
+  constructor(setRatingVisible, setSelectedRating, submitRatingToFirebase) {
+    this.setRatingVisible = setRatingVisible;
+    this.setSelectedRating = setSelectedRating;
+    this.submitRatingToFirebase = submitRatingToFirebase;
+  }
+
+  show() {
+    this.setRatingVisible(true);
+  }
+
+  hide() {
+    this.setRatingVisible(false);
+  }
+
+  setRating(rating) {
+    this.setSelectedRating(rating);
+  }
+
+  submitRating(rating, feedback) {
+    console.log(`Rating: ${rating}, Feedback: ${feedback}`);
+    this.submitRatingToFirebase(rating, feedback);
+    this.hide();
+  }
+}
+
+class ConversationManager {
+  constructor(ratingSystem) {
+    this.isEnded = false;
+    this.ratingSystem = ratingSystem;
+    this.onConversationEnd = null;
+  }
+
+  processMessage(message) {
+    if (this.isEnded) return;
+
+    if (message.toLowerCase() === '/end') {
+      this.endConversation();
+      return;
+    }
+
+    console.log('Processing message:', message);
+  }
+
+  endConversation() {
+    if (this.isEnded) return;
+    
+    this.isEnded = true;
+    console.log('Conversation ended');
+    this.ratingSystem.show();
+    if (this.onConversationEnd) {
+      this.onConversationEnd();
+    }
+  }
+}
 
 export default function Home() {
-
-  // USER AUTH
-
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-
   const [expanded, setExpanded] = useState(false);
+  const [ratingVisible, setRatingVisible] = useState(false);
+  const [selectedRating, setSelectedRating] = useState(0);
+  const [feedback, setFeedback] = useState('');
+
+
+  const submitRatingToFirebase = async (rating, feedback) => {
+      const ratingData = {
+        rating: rating,
+        feedback: feedback,
+        timestamp: serverTimestamp()
+      };
+
+      const docRef = await addDoc(collection(firestore, "ratings"), ratingData);
+      console.log("Rating submitted with ID: ", docRef.id);
+  };
+
+  const [conversationManager] = useState(() => new ConversationManager(new RatingSystem(setRatingVisible, setSelectedRating, submitRatingToFirebase)));
+
+
+  const [history, setHistory] = useState([
+    {
+      role: "user",
+      parts: [{ text: "" }]
+    },
+    {
+      role: "model",
+      parts: [{ text: "Meow! I'm your PawsitiveCare virtual assistant, here to pounce on any questions you have. How can I help you today? Please note: to end the conversation with our virtual assistant, please type the /end command." }]
+    }
+  ]);
+
+  const [message, setMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleChange = (panel) => (event, newExpanded) => {
     setExpanded(newExpanded ? panel : false);
@@ -54,7 +136,6 @@ export default function Home() {
   const onSubmit = async (e) => {
     e.preventDefault()
     await createUserWithEmailAndPassword(auth, email, password).then((userCredential) => {
-      // Sign up
       const user = userCredential.user;
       console.log(user);
     })
@@ -68,7 +149,6 @@ export default function Home() {
   const onLogin = (e) => {
     e.preventDefault();
     signInWithEmailAndPassword(auth, email, password).then((userCredential) => {
-      // Signed in
       const user = userCredential.user;
       console.log(user);
     })
@@ -81,14 +161,13 @@ export default function Home() {
 
   const handleLogout = () => {               
     signOut(auth).then(() => {
-    // Sign-out successful
         console.log("Signed out successfully")
     }).catch((error) => {
-    // An error happened.
+      console.log("An error happened during sign out:", error)
     });
-}
+  }
 
-  useEffect(()=> {
+  useEffect(() => {
     onAuthStateChanged(auth, (user) => {
       if(user){
         const uid = user.uid;
@@ -97,26 +176,16 @@ export default function Home() {
         console.log("user is logged out")
       }
     })
-  })
-
-
-  // MESSAGING
-  const [history, setHistory] = useState([
-    {
-      role: "user",
-      parts: [{ text: "" }]
-    },
-    {
-      role: "model",
-      parts: [{ text: "Meow! I'm your PawsitiveCare virtual assistant, here to pounce on any questions you have. How can I help you today?" }]
-    }
-
-  ]);
-
-  const [message, setMessage] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  }, [])
 
   const sendMessage = async () => {
+    if (message.toLowerCase() === '/end') {
+      conversationManager.endConversation();
+      setIsLoading(true);
+      return;
+    }
+    
+    conversationManager.processMessage(message);
     
     setHistory((history) => [...history, { role: "user", parts: [{ text: message }] }]);
     setMessage('');
@@ -151,6 +220,14 @@ export default function Home() {
     scrollToBottom();
   }, [history]);
 
+  const handleRatingSubmit = () => {
+    conversationManager.ratingSystem.submitRating(selectedRating, feedback);
+    setIsLoading(false);
+    setRatingVisible(false);
+    setSelectedRating(0);
+    setFeedback('');
+  };
+
   return (
     <Box
       width="100vw"
@@ -161,8 +238,8 @@ export default function Home() {
       alignItems="center"
       sx={{bgcolor:'background.default'}}
     >
-
-      <Box fullWidth sx={{ display:'flex',
+      <Box fullWidth sx={{ 
+        display:'flex',
         flexDirection:'column',
         bgcolor:'primary.highlight', 
         mr: 5,
@@ -171,143 +248,139 @@ export default function Home() {
         borderRadius: 5,
         border:"1px solid white", 
         p:3,
-        borderColor:'primary.border'}}>
+        borderColor:'primary.border'
+      }}>
+        <Accordion 
+          variant="contained" 
+          fullWidth 
+          expanded={expanded === 'panel1'} 
+          onChange={handleChange('panel1')}
+          sx={{mb:2, bgcolor:'primary.main', boxShadow:1, borderRadius:2, '&:before': {display: 'none'}}}
+        >
+          <AccordionSummary 
+            id="panel-header" 
+            aria-controls="panel-content"
+            sx={{justifyContent:"center", color:'primary.highlight'}}
+          >
+            Sign In
+          </AccordionSummary>
+          <AccordionDetails>
+            <Box>
+              <TextField
+                sx={{mb:2, background: '#fff2f4', borderRadius:1}}
+                label="Email"
+                fullWidth
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+              <TextField
+                sx={{mb:2, background: '#fff2f4', borderRadius:1}}
+                label="Password"
+                fullWidth
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+              <Button 
+                variant="contained" 
+                fullWidth 
+                sx={{height:'40px', mb:3, bgcolor:'primary.highlight'}}
+                onClick={onLogin}
+              >
+                Sign In
+              </Button>
+            </Box>
+          </AccordionDetails>
+        </Accordion>
 
-        {/* <Button variant="contained" onClick={handleSignInOpen} fullWidth sx={{height:'40px', mb:3, color:'white'}}>
-          Sign In
+        <Accordion 
+          variant="contained" 
+          fullWidth 
+          expanded={expanded === 'panel2'} 
+          onChange={handleChange('panel2')}
+          sx={{ mb:2, bgcolor:'primary.main', boxShadow:1, borderRadius:2, '&:before': {display: 'none'}}}
+        >
+          <AccordionSummary 
+            id="panel-header" 
+            aria-controls="panel-content"
+            sx={{justifyContent:"center", color:'primary.highlight'}}
+          >
+            Sign Up
+          </AccordionSummary>
+          <AccordionDetails>
+            <Box>
+              <TextField
+                sx={{mb:2,background: '#fff2f4', borderRadius:1}}
+                label="Email"
+                fullWidth
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+              <TextField
+                sx={{mb:2, background: '#fff2f4', borderRadius:1}}
+                label="Password"
+                fullWidth
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+              <Button 
+                variant="contained" 
+                fullWidth 
+                sx={{height:'40px', mb:3, bgcolor:'primary.highlight'}} 
+                onClick={onSubmit}
+              >
+                Sign Up!
+              </Button>
+            </Box>
+          </AccordionDetails>
+        </Accordion>
+      
+        <Button 
+          variant="contained" 
+          fullWidth 
+          sx={{height:'40px', mb:3, color:'white', mt:2}} 
+          onClick={handleLogout}
+        >
+          Log out
         </Button>
-        <Box
-          visibility={signInOpen}
-          aria-labelledby="modal-modal-title"
-          aria-describedby="modal-modal-description">
-          <Box>
-            Email
-          </Box>
-
-        </Box> */}
-        
-          <Accordion 
-            variant="contained" 
-            fullWidth 
-            expanded={expanded === 'panel1'} 
-            onChange={handleChange('panel1')}
-            sx={{mb:2, bgcolor:'primary.main', boxShadow:1, borderRadius:2, '&:before': {display: 'none'}}}>
-
-            <AccordionSummary id="panel-header" aria-controls="panel-content"
-              sx={{justifyContent:"center", color:'primary.highlight'}}>
-              Sign In
-            </AccordionSummary>
-            <AccordionDetails sx={{}}>
-              <Box sx={{}}>
-                <TextField
-                  sx={{mb:2, background: '#fff2f4', borderRadius:1}}
-                  label="Email"
-                  fullWidth
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-                <TextField
-                  sx={{mb:2, background: '#fff2f4', borderRadius:1}}
-                  label="Password"
-                  fullWidth
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-                <Button 
-                  variant="contained" 
-                  fullWidth 
-                  sx={{height:'40px', mb:3, bgcolor:'primary.highlight'}}
-                  onClick={onLogin}>
-                  Sign In
-                </Button>
-              </Box>
-            </AccordionDetails>
-          </Accordion>
-        
-
-        
-          <Accordion variant="contained" fullWidth expanded={expanded === 'panel2'} onChange={handleChange('panel2')}
-            sx={{ mb:2, bgcolor:'primary.main', boxShadow:1, borderRadius:2, '&:before': {display: 'none'}}}>
-
-            <AccordionSummary id="panel-header" aria-controls="panel-content"
-              sx={{justifyContent:"center", color:'primary.highlight'}}>
-              Sign Up
-            </AccordionSummary>
-            <AccordionDetails>
-              <Box sx={{}}>
-                {/* <TextField
-                  sx={{mb:2}}
-                  label="Name"
-                  fullWidth
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                /> */}
-                <TextField
-                  sx={{mb:2,background: '#fff2f4', borderRadius:1}}
-                  label="Email"
-                  fullWidth
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-                <TextField
-                  sx={{mb:2, background: '#fff2f4', borderRadius:1}}
-                  label="Password"
-                  fullWidth
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-                <Button variant="contained" fullWidth sx={{height:'40px', mb:3, bgcolor:'primary.highlight'}} onClick={onSubmit}>
-                  Sign Up!
-                </Button>
-              </Box>
-            </AccordionDetails>
-          </Accordion>
-        
-          <Button variant="contained" fullWidth sx={{height:'40px', mb:3, color:'white', mt:2}} onClick={handleLogout} >
-            Log out
-          </Button>
-        
-
-
-        {/* <Button variant="contained" onClick={handleSignInOpen} fullWidth sx={{height:'40px', mb:3, color:'white', mt:10}}>
-          Sign Up
-        </Button> */}
-
       </Box>
       
       <Stack
         direction={"column"}
         width="500px"
         height="700px"
-        
         borderRadius={5}
         p={2}
         spacing={3}
         sx={{bgcolor: 'primary.highlight', border:"1px solid white", borderColor:'primary.border'}}
       >
         <Box
-        fullwidth
-        display='flex'
-        flexDirection='column'
-        justifyContent="center"
-        alignItems="center"
+          fullwidth
+          display='flex'
+          flexDirection='column'
+          justifyContent="center"
+          alignItems="center"
         >
-        <Box component="img"
-        src="https://i.pinimg.com/564x/b8/51/78/b85178bffa0f26892173b37fe22fec1b.jpg"
-        sx={{borderRadius: '50px',
-          justifyContent:"center",
-          alignItems: 'center',
-          height: 80,
-          width: 80,
-          mt:1
-        }}/>
-        <Typography sx={{mt:1, mb:-1}}>Kitty</Typography>
+          <Box 
+            component="img"
+            src="https://i.pinimg.com/564x/b8/51/78/b85178bffa0f26892173b37fe22fec1b.jpg"
+            sx={{
+              borderRadius: '50px',
+              justifyContent:"center",
+              alignItems: 'center',
+              height: 80,
+              width: 80,
+              mt:1
+            }}
+          />
+          <Typography sx={{mt:1, mb:-1}}>Kitty</Typography>
         </Box>
 
         <Divider 
-        fullwidth
-        orientation="horizontal"
-        sx={{my:0}}
+          fullwidth
+          orientation="horizontal"
+          sx={{my:0}}
         />
         <Stack
           direction={'column'}
@@ -320,17 +393,11 @@ export default function Home() {
             <Box
               key={index}
               display="flex"
-              justifyContent={
-                message.role === 'user' ? 'flex-end' : 'flex-start'
-              }
+              justifyContent={message.role === 'user' ? 'flex-end' : 'flex-start'}
             >
               <Box
-                bgcolor={
-                  message.role === 'model'
-                    ? 'primary.main'
-                    : 'secondary.main'
-                }
-                color= "white"
+                bgcolor={message.role === 'model' ? 'primary.main' : 'secondary.main'}
+                color="white"
                 borderRadius={16}
                 p={3}
               >
@@ -357,11 +424,43 @@ export default function Home() {
             variant='contained'
             onClick={sendMessage}
             disabled={isLoading}
-            sx={{bgcolor: 'secondary.main'}}>
+            sx={{bgcolor: 'secondary.main'}}
+          >
             {isLoading ? 'Sending...' : 'Send'}
           </Button>
         </Stack>
       </Stack>
+      
+      {/* Rating Modal */}
+      <Modal
+        open={ratingVisible}
+        onClose={() => setRatingVisible(false)}
+        aria-labelledby="rating-modal-title"
+        aria-describedby="rating-modal-description"
+      >
+        <Box sx={style}>
+          <Typography id="rating-modal-title" variant="h6" component="h2">
+            How would you rate this conversation?
+          </Typography>
+          <Rating
+            name="simple-controlled"
+            value={selectedRating}
+            onChange={(event, newValue) => {
+              setSelectedRating(newValue);
+            }}
+          />
+          <TextField
+            label="Feedback"
+            multiline
+            rows={4}
+            value={feedback}
+            onChange={(e) => setFeedback(e.target.value)}
+          />
+          <Button onClick={handleRatingSubmit} variant="contained">
+            Submit Rating
+          </Button>
+        </Box>
+      </Modal>
     </Box>
   );
 }
